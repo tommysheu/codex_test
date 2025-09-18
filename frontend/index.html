@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT-4o Chatbot</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+        background-color: #0f172a;
+        color: #e2e8f0;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.25), transparent 55%),
+          radial-gradient(circle at bottom, rgba(236, 72, 153, 0.2), transparent 40%),
+          #0f172a;
+      }
+
+      .app {
+        width: min(960px, 92vw);
+        height: min(720px, 92vh);
+        backdrop-filter: blur(18px);
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 18px;
+        box-shadow: 0 35px 80px rgba(15, 23, 42, 0.55);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      header {
+        padding: 18px 24px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.45rem;
+      }
+
+      .mode-select {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 0.95rem;
+      }
+
+      .mode-select label {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      main {
+        flex: 1;
+        padding: 24px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        scroll-behavior: smooth;
+      }
+
+      .message {
+        max-width: 80%;
+        padding: 14px 18px;
+        border-radius: 16px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.25);
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.95));
+        color: #f8fafc;
+      }
+
+      .message.assistant {
+        align-self: flex-start;
+        background: rgba(30, 41, 59, 0.85);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+
+      .search-results {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        font-size: 0.85rem;
+      }
+
+      .search-results p {
+        margin: 0 0 6px;
+        font-weight: 600;
+        color: #38bdf8;
+      }
+
+      .search-results ul {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .search-results a {
+        color: #fbbf24;
+        text-decoration: none;
+      }
+
+      .search-results a:hover {
+        text-decoration: underline;
+      }
+
+      form {
+        padding: 20px 24px;
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(15, 23, 42, 0.92);
+        display: grid;
+        gap: 12px;
+      }
+
+      textarea {
+        width: 100%;
+        resize: none;
+        min-height: 90px;
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(15, 23, 42, 0.7);
+        color: inherit;
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: rgba(59, 130, 246, 0.8);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+      }
+
+      button {
+        justify-self: end;
+        padding: 12px 28px;
+        border: none;
+        border-radius: 999px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        background: linear-gradient(135deg, #38bdf8, #6366f1);
+        color: #0f172a;
+        transition: transform 0.2s ease;
+      }
+
+      button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.7;
+        transform: none !important;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .status {
+        font-size: 0.85rem;
+        color: rgba(148, 163, 184, 0.9);
+        text-align: right;
+        min-height: 1em;
+      }
+
+      @media (max-width: 600px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .message {
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>GPT-4o Chatbot</h1>
+        <div class="mode-select">
+          <span>模式：</span>
+          <label>
+            <input type="radio" name="mode" value="llm_only" checked />
+            純 LLM
+          </label>
+          <label>
+            <input type="radio" name="mode" value="search" />
+            網頁查詢 + LLM
+          </label>
+        </div>
+      </header>
+      <main id="chat-log" aria-live="polite"></main>
+      <form id="chat-form">
+        <textarea
+          id="message-input"
+          placeholder="輸入您的問題或想聊的話題..."
+          required
+        ></textarea>
+        <button type="submit">送出</button>
+        <div class="status" id="status"></div>
+      </form>
+    </div>
+
+    <script>
+      const chatLog = document.getElementById("chat-log");
+      const form = document.getElementById("chat-form");
+      const messageInput = document.getElementById("message-input");
+      const statusEl = document.getElementById("status");
+      let history = [];
+
+      function appendMessage(role, content, searchResults = []) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `message ${role}`;
+        wrapper.textContent = content;
+
+        if (role === "assistant" && searchResults.length) {
+          const resultsBlock = document.createElement("div");
+          resultsBlock.className = "search-results";
+          resultsBlock.innerHTML = `
+            <p>🔎 使用了即時網頁查詢結果：</p>
+            <ul>
+              ${searchResults
+                .map(
+                  (item) => `
+                    <li>
+                      <a href="${item.url}" target="_blank" rel="noopener noreferrer">
+                        ${item.title}
+                      </a>
+                    </li>
+                  `
+                )
+                .join("")}
+            </ul>
+          `;
+          wrapper.appendChild(resultsBlock);
+        }
+
+        chatLog.appendChild(wrapper);
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      async function sendMessage(event) {
+        event.preventDefault();
+        const message = messageInput.value.trim();
+        if (!message) {
+          return;
+        }
+
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        appendMessage("user", message);
+        history.push({ role: "user", content: message });
+        form.querySelector("button").disabled = true;
+        statusEl.textContent = mode === "search" ? "正在搜尋並產生回應..." : "正在產生回應...";
+
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, mode, history }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "伺服器發生錯誤");
+          }
+
+          const data = await response.json();
+          appendMessage("assistant", data.reply, data.used_search ? data.search_results : []);
+          history.push({ role: "assistant", content: data.reply });
+          statusEl.textContent = "完成";
+        } catch (error) {
+          console.error(error);
+          appendMessage("assistant", `⚠️ ${error.message}`);
+          statusEl.textContent = "錯誤";
+        } finally {
+          form.querySelector("button").disabled = false;
+          messageInput.value = "";
+          messageInput.focus();
+        }
+      }
+
+      form.addEventListener("submit", sendMessage);
+    </script>
+  </body>
+</html>

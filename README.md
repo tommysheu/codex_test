@@ -1,0 +1,82 @@
+# GPT-4o Chatbot 網頁
+
+此專案提供一個使用 FastAPI 建立的後端與 HTML/JavaScript 前端的聊天機器人示例。後端透過 GPT-4o API 回答問題，並支援兩種使用模式：
+
+1. **純 LLM 模式**：直接以模型的既有知識回覆。
+2. **網頁查詢 + LLM 模式**：先以 DuckDuckGo 取得即時網頁摘要，再交由 GPT-4o 產生結合查詢資訊的回答。
+
+## 專案結構
+
+```
+.
+├── app
+│   └── main.py          # FastAPI 服務
+├── frontend
+│   └── index.html       # 前端單頁應用程式
+├── requirements.txt     # 相依套件
+└── README.md            # 操作說明
+```
+
+## 前置需求
+
+- Python 3.10+
+- OpenAI API 金鑰，並設定環境變數：
+
+```bash
+export OPENAI_API_KEY="your-openai-key"
+```
+
+> 若未設定金鑰，後端將回報 `OPENAI_API_KEY is not configured on the server.` 錯誤。
+
+## 安裝與啟動
+
+1. 安裝套件：
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. 啟動 FastAPI 伺服器（預設在 `http://127.0.0.1:8000`）：
+
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+3. 在瀏覽器開啟 `http://127.0.0.1:8000/` 使用聊天介面。
+
+4. FastAPI 內建 Swagger 文件可在 `http://127.0.0.1:8000/docs` 查看與測試 API。
+
+## API 端點
+
+- `POST /chat`
+  - **body**
+    ```json
+    {
+      "message": "使用者訊息",
+      "mode": "llm_only" | "search",
+      "history": [
+        {"role": "user", "content": "前一輪的提問"},
+        {"role": "assistant", "content": "前一輪的回答"}
+      ]
+    }
+    ```
+  - **response**
+    ```json
+    {
+      "reply": "模型產生的回答",
+      "used_search": true,
+      "search_results": [
+        {"title": "結果標題", "snippet": "摘要", "url": "https://..."}
+      ]
+    }
+    ```
+
+## 注意事項
+
+- DuckDuckGo API 為公開服務，回傳內容可能依地域與查詢不同。若網路連線失敗，後端仍會嘗試以 LLM 回覆。
+- 前端預設顯示繁體中文 UI，GPT-4o 會自動依照上下文在中英雙語間轉換。
+
+## 開發建議
+
+- 若要擴充更多資料來源，可在 `app/main.py` 中的 `_perform_search` 函式新增其他查詢策略。
+- 可將前端改寫為框架式應用（例如 React/Vue）並透過 FastAPI 的 static mount 部署。此範例以簡潔的原生 HTML/JS 示範核心流程。
