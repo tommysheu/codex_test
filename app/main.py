@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Iterable, List, Literal, Optional
 
-import requests
+from duckduckgo_search import DDGS
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -104,45 +104,40 @@ async def index() -> FileResponse:
 def _perform_search(query: str, max_results: int = 3) -> List[SearchResult]:
     """Query DuckDuckGo for lightweight search snippets."""
 
-    url = "https://api.duckduckgo.com/"
-    params = {
-        "q": query,
-        "format": "json",
-        "no_html": 1,
-        "no_redirect": 1,
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-    except requests.RequestException as exc:  # pragma: no cover - network failure path
-        logger.warning("Search request failed: %s", exc)
+    query = query.strip()
+    if not query:
         return []
 
-    payload = response.json()
-    related_topics = payload.get("RelatedTopics", [])
-    results: List[SearchResult] = []
-    for topic in related_topics:
-        if "Text" in topic and "FirstURL" in topic:
-            results.append(
-                SearchResult(
-                    title=topic.get("Text", ""),
-                    snippet=topic.get("Text", ""),
-                    url=topic.get("FirstURL", ""),
-                )
+    def _fetch(region: str) -> List[SearchResult]:
+        with DDGS(timeout=10) as ddgs:
+            hits = ddgs.text(
+                query,
+                region=region,
+                safesearch="moderate",
+                max_results=max_results,
             )
-        elif "Topics" in topic:
-            for subtopic in topic.get("Topics", []):
-                if "Text" in subtopic and "FirstURL" in subtopic:
-                    results.append(
-                        SearchResult(
-                            title=subtopic.get("Text", ""),
-                            snippet=subtopic.get("Text", ""),
-                            url=subtopic.get("FirstURL", ""),
-                        )
-                    )
-        if len(results) >= max_results:
-            break
-    return results[:max_results]
+            results: List[SearchResult] = []
+            for item in hits:
+                url = item.get("href", "").strip()
+                if not url:
+                    continue
+                title = item.get("title") or item.get("body") or url
+                snippet = item.get("body", "")
+                results.append(
+                    SearchResult(title=title.strip(), snippet=snippet.strip(), url=url)
+                )
+                if len(results) >= max_results:
+                    break
+            return results
+
+    try:
+        results = _fetch("tw-tzh")
+        if not results:
+            results = _fetch("wt-wt")
+        return results
+    except Exception as exc:  # pragma: no cover - network failure path
+        logger.warning("Search request failed: %s", exc)
+        return []
 
 
 def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]) -> List[dict]:

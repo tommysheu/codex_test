@@ -124,6 +124,15 @@
         text-decoration: underline;
       }
 
+      .search-results li {
+        list-style: disc;
+      }
+
+      .search-results li p {
+        margin: 4px 0 0;
+        color: rgba(226, 232, 240, 0.82);
+      }
+
       form {
         padding: 20px 24px;
         border-top: 1px solid rgba(148, 163, 184, 0.16);
@@ -237,22 +246,30 @@
         if (role === "assistant" && searchResults.length) {
           const resultsBlock = document.createElement("div");
           resultsBlock.className = "search-results";
-          resultsBlock.innerHTML = `
-            <p>🔎 使用了即時網頁查詢結果：</p>
-            <ul>
-              ${searchResults
-                .map(
-                  (item) => `
-                    <li>
-                      <a href="${item.url}" target="_blank" rel="noopener noreferrer">
-                        ${item.title}
-                      </a>
-                    </li>
-                  `
-                )
-                .join("")}
-            </ul>
-          `;
+          const heading = document.createElement("p");
+          heading.textContent = "🔎 使用了即時網頁查詢結果：";
+          const list = document.createElement("ul");
+
+          searchResults.forEach((item) => {
+            const listItem = document.createElement("li");
+            const link = document.createElement("a");
+            link.href = item.url;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = item.title || item.url;
+            listItem.appendChild(link);
+
+            if (item.snippet) {
+              const snippet = document.createElement("p");
+              snippet.textContent = item.snippet;
+              listItem.appendChild(snippet);
+            }
+
+            list.appendChild(listItem);
+          });
+
+          resultsBlock.appendChild(heading);
+          resultsBlock.appendChild(list);
           wrapper.appendChild(resultsBlock);
         }
 

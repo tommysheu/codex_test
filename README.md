@@ -3,7 +3,7 @@
 此專案提供一個使用 FastAPI 建立的後端與 HTML/JavaScript 前端的聊天機器人示例。後端透過 GPT-4o API 回答問題，並支援兩種使用模式：
 
 1. **純 LLM 模式**：直接以模型的既有知識回覆。
-2. **網頁查詢 + LLM 模式**：先以 DuckDuckGo 取得即時網頁摘要，再交由 GPT-4o 產生結合查詢資訊的回答。
+2. **網頁查詢 + LLM 模式**：先以 DuckDuckGo（透過 `duckduckgo-search` 套件）取得即時網頁摘要，再交由 GPT-4o 產生結合查詢資訊的回答。
 
 ## 專案結構
 
@@ -73,7 +73,7 @@ export OPENAI_API_KEY="your-openai-key"
 
 ## 注意事項
 
-- DuckDuckGo API 為公開服務，回傳內容可能依地域與查詢不同。若網路連線失敗，後端仍會嘗試以 LLM 回覆。
+- DuckDuckGo 搜尋由 `duckduckgo-search` 套件驅動，會先以台灣地區（`tw-tzh`）查詢，若無結果再以全球設定重試。若網路連線失敗，後端仍會嘗試以 LLM 回覆。
 - 前端預設顯示繁體中文 UI，GPT-4o 會自動依照上下文在中英雙語間轉換。
 
 ## 開發建議
