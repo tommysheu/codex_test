@@ -178,7 +178,16 @@ def _run_llm(messages: List[dict]) -> str:
             detail="OPENAI_API_KEY is not configured on the server.",
         )
     try:
-        response = client.responses.create(model="gpt-4o", messages=messages)
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[
+                {
+                    "role": message["role"],
+                    "content": message["content"],
+                }
+                for message in messages
+            ],
+        )
     except Exception as exc:  # pragma: no cover - network failure path
         logger.exception("LLM request failed")
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
