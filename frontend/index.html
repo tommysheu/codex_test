@@ -243,6 +243,19 @@
       const messageInput = document.getElementById("message-input");
       const statusEl = document.getElementById("status");
       let history = [];
+      let activeAnchor = null;
+
+      function scrollToAnchor(smooth = true) {
+        if (!activeAnchor) {
+          return;
+        }
+        const top = Math.max(activeAnchor.offsetTop - 12, 0);
+        if (typeof chatLog.scrollTo === "function") {
+          chatLog.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+        } else {
+          chatLog.scrollTop = top;
+        }
+      }
 
       function createMessage(role, initialText = "") {
         const wrapper = document.createElement("div");
@@ -252,7 +265,12 @@
         textEl.textContent = initialText;
         wrapper.appendChild(textEl);
         chatLog.appendChild(wrapper);
-        chatLog.scrollTop = chatLog.scrollHeight;
+        if (role === "user") {
+          activeAnchor = wrapper;
+          scrollToAnchor(true);
+        } else {
+          scrollToAnchor(false);
+        }
         return { wrapper, textEl };
       }
 
@@ -293,7 +311,7 @@
         resultsBlock.appendChild(heading);
         resultsBlock.appendChild(list);
         wrapper.appendChild(resultsBlock);
-        chatLog.scrollTop = chatLog.scrollHeight;
+        scrollToAnchor(false);
       }
 
       async function sendMessage(event) {
@@ -386,13 +404,13 @@
                 if (parsed.text) {
                   finalReply += parsed.text;
                   assistantMessage.textEl.textContent = finalReply;
-                  chatLog.scrollTop = chatLog.scrollHeight;
+                  scrollToAnchor(false);
                 }
               } else if (eventType === "done") {
                 if (typeof parsed.text === "string") {
                   finalReply = parsed.text;
                   assistantMessage.textEl.textContent = finalReply;
-                  chatLog.scrollTop = chatLog.scrollHeight;
+                  scrollToAnchor(false);
                 }
                 if (pendingSearchResults && pendingSearchResults.length) {
                   renderSearchResults(assistantMessage.wrapper, pendingSearchResults);
@@ -430,6 +448,7 @@
             assistantMessage = createMessage("assistant", "");
           }
           assistantMessage.textEl.textContent = `⚠️ ${error.message}`;
+          scrollToAnchor(false);
           statusEl.textContent = "錯誤";
         } finally {
           submitButton.disabled = false;
