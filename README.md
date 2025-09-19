@@ -60,15 +60,23 @@ export OPENAI_API_KEY="your-openai-key"
       ]
     }
     ```
-  - **response**
-    ```json
-    {
-      "reply": "模型產生的回答",
-      "used_search": true,
-      "search_results": [
-        {"title": "結果標題", "snippet": "摘要", "url": "https://..."}
-      ]
-    }
+  - **response**：以 [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events) 形式串流傳回，事件類型說明如下：
+    - `meta`：包含 `used_search` 與 `search_results`，前端據此渲染查詢來源。
+    - `delta`：逐步輸出 `text` 欄位，為模型即時生成的片段。
+    - `done`：回傳最終完整的 `text` 內容。
+    - `error`：若產生錯誤則附上 `message` 描述。
+    
+    範例：
+
+    ```text
+    event: meta
+    data: {"used_search": true, "search_results": [{"title": "結果標題", "snippet": "摘要", "url": "https://..."}]}
+
+    event: delta
+    data: {"text": "第一段回覆"}
+
+    event: done
+    data: {"text": "完整回答"}
     ```
 
 ## 注意事項

@@ -1,15 +1,17 @@
 """FastAPI backend for GPT-4o powered chatbot."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Iterable, List, Literal, Optional
+from threading import Lock
+from typing import Iterable, Iterator, List, Literal, Optional
 
 from duckduckgo_search import DDGS
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel, Field, validator
@@ -82,16 +84,6 @@ class ChatRequest(BaseModel):
         if not msg.content:
             raise ValueError("History messages cannot be empty.")
         return msg
-
-
-class ChatResponse(BaseModel):
-    """Response returned to the front-end."""
-
-    reply: str
-    used_search: bool
-    search_results: List[SearchResult] = Field(default_factory=list)
-
-
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     """Serve the single-page front-end application."""
@@ -99,6 +91,10 @@ async def index() -> FileResponse:
     if not index_file.exists():
         raise HTTPException(status_code=404, detail="Front-end not found.")
     return FileResponse(index_file)
+
+
+_ddgs_client = DDGS(timeout=10)
+_ddgs_lock = Lock()
 
 
 def _perform_search(query: str, max_results: int = 3) -> List[SearchResult]:
@@ -109,26 +105,28 @@ def _perform_search(query: str, max_results: int = 3) -> List[SearchResult]:
         return []
 
     def _fetch(region: str) -> List[SearchResult]:
-        with DDGS(timeout=10) as ddgs:
-            hits = ddgs.text(
-                query,
-                region=region,
-                safesearch="moderate",
-                max_results=max_results,
-            )
-            results: List[SearchResult] = []
-            for item in hits:
-                url = item.get("href", "").strip()
-                if not url:
-                    continue
-                title = item.get("title") or item.get("body") or url
-                snippet = item.get("body", "")
-                results.append(
-                    SearchResult(title=title.strip(), snippet=snippet.strip(), url=url)
+        with _ddgs_lock:
+            hits = list(
+                _ddgs_client.text(
+                    query,
+                    region=region,
+                    safesearch="moderate",
+                    max_results=max_results,
                 )
-                if len(results) >= max_results:
-                    break
-            return results
+            )
+        results: List[SearchResult] = []
+        for item in hits:
+            url = item.get("href", "").strip()
+            if not url:
+                continue
+            title = item.get("title") or item.get("body") or url
+            snippet = item.get("body", "")
+            results.append(
+                SearchResult(title=title.strip(), snippet=snippet.strip(), url=url)
+            )
+            if len(results) >= max_results:
+                break
+        return results
 
     try:
         results = _fetch("tw-tzh")
@@ -144,7 +142,7 @@ def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]
     """Compose the message array sent to GPT-4o."""
 
     messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(message.dict() for message in request.history)
+    messages.extend(message.model_dump() for message in request.history)
     context_lines = []
     for result in search_results:
         context_lines.append(f"Title: {result.title}\nURL: {result.url}\nSnippet: {result.snippet}")
@@ -164,16 +162,20 @@ def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]
     return messages
 
 
-def _run_llm(messages: List[dict]) -> str:
-    """Send messages to GPT-4o and extract the assistant reply."""
+def _stream_llm(messages: List[dict]) -> Iterator[tuple[str, dict]]:
+    """Stream chunks from GPT-4o and yield structured events."""
 
     if client is None:
         raise HTTPException(
             status_code=500,
             detail="OPENAI_API_KEY is not configured on the server.",
         )
+
+    collected_parts: List[str] = []
+    final_response = None
+
     try:
-        response = client.responses.create(
+        with client.responses.stream(
             model="gpt-4o",
             input=[
                 {
@@ -182,36 +184,86 @@ def _run_llm(messages: List[dict]) -> str:
                 }
                 for message in messages
             ],
-        )
+        ) as stream:
+            for event in stream:
+                if event.type == "response.output_text.delta":
+                    text = event.delta or ""
+                    if text:
+                        collected_parts.append(text)
+                        yield "delta", {"text": text}
+                elif event.type == "response.refusal.delta":
+                    text = event.delta or ""
+                    if text:
+                        collected_parts.append(text)
+                        yield "delta", {"text": text}
+            final_response = stream.get_final_response()
     except Exception as exc:  # pragma: no cover - network failure path
         logger.exception("LLM request failed")
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
-    if hasattr(response, "output_text") and response.output_text:
-        return response.output_text
+    full_text = "".join(collected_parts)
+    if not full_text and final_response is not None:
+        if hasattr(final_response, "output_text") and final_response.output_text:
+            full_text = final_response.output_text
+        else:
+            for item in getattr(final_response, "output", []):
+                if item.get("type") == "message":
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            full_text += content.get("text", "")
 
-    collected_parts: List[str] = []
-    for item in getattr(response, "output", []):
-        if item.get("type") == "message":
-            for content in item.get("content", []):
-                if content.get("type") == "output_text":
-                    collected_parts.append(content.get("text", ""))
-    if not collected_parts:
+    if not full_text:
         raise HTTPException(status_code=502, detail="LLM returned an empty response.")
-    return "".join(collected_parts)
+
+    yield "done", {"text": full_text}
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    """Primary chat endpoint used by the front-end."""
+@app.post("/chat")
+async def chat(request: ChatRequest) -> StreamingResponse:
+    """Primary chat endpoint used by the front-end with streaming replies."""
+
+    if client is None:
+        raise HTTPException(
+            status_code=500,
+            detail="OPENAI_API_KEY is not configured on the server.",
+        )
 
     search_results: List[SearchResult] = []
     if request.mode == "search":
         search_results = _perform_search(request.message)
 
     messages = _build_messages(request, search_results)
-    reply = _run_llm(messages)
-    return ChatResponse(reply=reply, used_search=bool(search_results), search_results=search_results)
+
+    def _event_stream() -> Iterator[str]:
+        metadata = {
+            "used_search": bool(search_results),
+            "search_results": [result.model_dump() for result in search_results],
+        }
+        yield _format_sse_event("meta", metadata)
+        try:
+            for event_type, payload in _stream_llm(messages):
+                yield _format_sse_event(event_type, payload)
+        except HTTPException as exc:
+            logger.exception("Streaming failed with HTTP error")
+            yield _format_sse_event("error", {"message": exc.detail})
+            return
+        except Exception as exc:  # pragma: no cover - network failure path
+            logger.exception("Streaming failed")
+            yield _format_sse_event("error", {"message": str(exc)})
+            return
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+def _format_sse_event(event_type: str, payload: dict) -> str:
+    """Encode an SSE event as a string."""
+
+    data = json.dumps(payload, ensure_ascii=False)
+    return f"event: {event_type}\ndata: {data}\n\n"
 
 
 __all__ = ["app"]

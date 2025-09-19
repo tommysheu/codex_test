@@ -78,9 +78,15 @@
         padding: 14px 18px;
         border-radius: 16px;
         line-height: 1.5;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.25);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .message-text {
         white-space: pre-wrap;
         word-break: break-word;
-        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.25);
       }
 
       .message.user {
@@ -238,42 +244,55 @@
       const statusEl = document.getElementById("status");
       let history = [];
 
-      function appendMessage(role, content, searchResults = []) {
+      function createMessage(role, initialText = "") {
         const wrapper = document.createElement("div");
         wrapper.className = `message ${role}`;
-        wrapper.textContent = content;
+        const textEl = document.createElement("div");
+        textEl.className = "message-text";
+        textEl.textContent = initialText;
+        wrapper.appendChild(textEl);
+        chatLog.appendChild(wrapper);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return { wrapper, textEl };
+      }
 
-        if (role === "assistant" && searchResults.length) {
-          const resultsBlock = document.createElement("div");
-          resultsBlock.className = "search-results";
-          const heading = document.createElement("p");
-          heading.textContent = "🔎 使用了即時網頁查詢結果：";
-          const list = document.createElement("ul");
-
-          searchResults.forEach((item) => {
-            const listItem = document.createElement("li");
-            const link = document.createElement("a");
-            link.href = item.url;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            link.textContent = item.title || item.url;
-            listItem.appendChild(link);
-
-            if (item.snippet) {
-              const snippet = document.createElement("p");
-              snippet.textContent = item.snippet;
-              listItem.appendChild(snippet);
-            }
-
-            list.appendChild(listItem);
-          });
-
-          resultsBlock.appendChild(heading);
-          resultsBlock.appendChild(list);
-          wrapper.appendChild(resultsBlock);
+      function renderSearchResults(wrapper, searchResults = []) {
+        const existing = wrapper.querySelector(".search-results");
+        if (existing) {
+          existing.remove();
         }
 
-        chatLog.appendChild(wrapper);
+        if (!searchResults.length) {
+          return;
+        }
+
+        const resultsBlock = document.createElement("div");
+        resultsBlock.className = "search-results";
+        const heading = document.createElement("p");
+        heading.textContent = "🔎 使用了即時網頁查詢結果：";
+        const list = document.createElement("ul");
+
+        searchResults.forEach((item) => {
+          const listItem = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = item.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = item.title || item.url;
+          listItem.appendChild(link);
+
+          if (item.snippet) {
+            const snippet = document.createElement("p");
+            snippet.textContent = item.snippet;
+            listItem.appendChild(snippet);
+          }
+
+          list.appendChild(listItem);
+        });
+
+        resultsBlock.appendChild(heading);
+        resultsBlock.appendChild(list);
+        wrapper.appendChild(resultsBlock);
         chatLog.scrollTop = chatLog.scrollHeight;
       }
 
@@ -285,10 +304,15 @@
         }
 
         const mode = document.querySelector('input[name="mode"]:checked').value;
-        appendMessage("user", message);
+        createMessage("user", message);
         history.push({ role: "user", content: message });
-        form.querySelector("button").disabled = true;
+        const submitButton = form.querySelector("button");
+        submitButton.disabled = true;
         statusEl.textContent = mode === "search" ? "正在搜尋並產生回應..." : "正在產生回應...";
+
+        let assistantMessage;
+        let finalReply = "";
+        let receivedDone = false;
 
         try {
           const response = await fetch("/chat", {
@@ -297,21 +321,114 @@
             body: JSON.stringify({ message, mode, history }),
           });
 
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || "伺服器發生錯誤");
+          if (!response.ok || !response.body) {
+            let errorDetail = "伺服器發生錯誤";
+            try {
+              const payload = await response.json();
+              if (payload && payload.detail) {
+                errorDetail = payload.detail;
+              }
+            } catch (err) {
+              try {
+                errorDetail = await response.text();
+              } catch (err2) {
+                // ignore parsing errors
+              }
+            }
+            throw new Error(errorDetail || "伺服器發生錯誤");
           }
 
-          const data = await response.json();
-          appendMessage("assistant", data.reply, data.used_search ? data.search_results : []);
-          history.push({ role: "assistant", content: data.reply });
+          assistantMessage = createMessage("assistant", "");
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          const processBuffer = () => {
+            let boundary;
+            while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+              const rawEvent = buffer.slice(0, boundary).trim();
+              buffer = buffer.slice(boundary + 2);
+              if (!rawEvent) {
+                continue;
+              }
+
+              const lines = rawEvent.split("\n");
+              let eventType = "message";
+              let dataPayload = "";
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  eventType = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  const value = line.slice(5).trim();
+                  dataPayload += (dataPayload ? "\n" : "") + value;
+                }
+              }
+
+              if (!dataPayload) {
+                continue;
+              }
+
+              let parsed;
+              try {
+                parsed = JSON.parse(dataPayload);
+              } catch (parseError) {
+                console.error("無法解析伺服器回傳：", parseError);
+                continue;
+              }
+
+              if (eventType === "meta") {
+                if (parsed.used_search && Array.isArray(parsed.search_results)) {
+                  renderSearchResults(assistantMessage.wrapper, parsed.search_results);
+                }
+              } else if (eventType === "delta") {
+                if (parsed.text) {
+                  finalReply += parsed.text;
+                  assistantMessage.textEl.textContent = finalReply;
+                  chatLog.scrollTop = chatLog.scrollHeight;
+                }
+              } else if (eventType === "done") {
+                if (typeof parsed.text === "string") {
+                  finalReply = parsed.text;
+                  assistantMessage.textEl.textContent = finalReply;
+                  chatLog.scrollTop = chatLog.scrollHeight;
+                }
+                receivedDone = true;
+              } else if (eventType === "error") {
+                throw new Error(parsed.message || "伺服器發生錯誤");
+              }
+            }
+          };
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            processBuffer();
+          }
+
+          buffer += decoder.decode();
+          processBuffer();
+
+          if (!receivedDone) {
+            throw new Error("回覆未完整傳送");
+          }
+
+          if (finalReply) {
+            history.push({ role: "assistant", content: finalReply });
+          }
           statusEl.textContent = "完成";
         } catch (error) {
           console.error(error);
-          appendMessage("assistant", `⚠️ ${error.message}`);
+          if (!assistantMessage) {
+            assistantMessage = createMessage("assistant", "");
+          }
+          assistantMessage.textEl.textContent = `⚠️ ${error.message}`;
           statusEl.textContent = "錯誤";
         } finally {
-          form.querySelector("button").disabled = false;
+          submitButton.disabled = false;
           messageInput.value = "";
           messageInput.focus();
         }
