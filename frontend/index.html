@@ -313,6 +313,7 @@
         let assistantMessage;
         let finalReply = "";
         let receivedDone = false;
+        let pendingSearchResults = null;
 
         try {
           const response = await fetch("/chat", {
@@ -379,7 +380,7 @@
 
               if (eventType === "meta") {
                 if (parsed.used_search && Array.isArray(parsed.search_results)) {
-                  renderSearchResults(assistantMessage.wrapper, parsed.search_results);
+                  pendingSearchResults = parsed.search_results;
                 }
               } else if (eventType === "delta") {
                 if (parsed.text) {
@@ -392,6 +393,9 @@
                   finalReply = parsed.text;
                   assistantMessage.textEl.textContent = finalReply;
                   chatLog.scrollTop = chatLog.scrollHeight;
+                }
+                if (pendingSearchResults && pendingSearchResults.length) {
+                  renderSearchResults(assistantMessage.wrapper, pendingSearchResults);
                 }
                 receivedDone = true;
               } else if (eventType === "error") {
