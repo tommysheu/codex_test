@@ -89,6 +89,62 @@
         word-break: break-word;
       }
 
+      .message-text p {
+        margin: 0 0 0.75em;
+      }
+
+      .message-text p:last-child {
+        margin-bottom: 0;
+      }
+
+      .message-text ul,
+      .message-text ol {
+        margin: 0.5em 0;
+        padding-left: 1.25em;
+      }
+
+      .message-text li {
+        margin: 0.25em 0;
+      }
+
+      .message-text code {
+        font-family: "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 6px;
+        padding: 0.15em 0.4em;
+        font-size: 0.95em;
+      }
+
+      .message-text pre {
+        font-family: "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        padding: 1em;
+        margin: 0.75em 0;
+        overflow-x: auto;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .message-text pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.95em;
+      }
+
+      .message-text blockquote {
+        margin: 0.75em 0;
+        padding-left: 1em;
+        border-left: 4px solid rgba(148, 163, 184, 0.35);
+        color: rgba(226, 232, 240, 0.85);
+      }
+
+      .message-text a {
+        color: #38bdf8;
+      }
+
       .message.user {
         align-self: flex-end;
         background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.95));
@@ -237,13 +293,28 @@
       </form>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
     <script>
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+      });
+
       const chatLog = document.getElementById("chat-log");
       const form = document.getElementById("chat-form");
       const messageInput = document.getElementById("message-input");
       const statusEl = document.getElementById("status");
       let history = [];
       let activeAnchor = null;
+
+      function renderMarkdown(markdownText) {
+        if (!markdownText) {
+          return "";
+        }
+        const html = marked.parse(markdownText);
+        return DOMPurify.sanitize(html);
+      }
 
       function scrollToAnchor(smooth = true) {
         if (!activeAnchor) {
@@ -262,7 +333,11 @@
         wrapper.className = `message ${role}`;
         const textEl = document.createElement("div");
         textEl.className = "message-text";
-        textEl.textContent = initialText;
+        if (role === "assistant") {
+          textEl.innerHTML = renderMarkdown(initialText);
+        } else {
+          textEl.textContent = initialText;
+        }
         wrapper.appendChild(textEl);
         chatLog.appendChild(wrapper);
         if (role === "user") {
@@ -403,13 +478,13 @@
               } else if (eventType === "delta") {
                 if (parsed.text) {
                   finalReply += parsed.text;
-                  assistantMessage.textEl.textContent = finalReply;
+                  assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
                   scrollToAnchor(false);
                 }
               } else if (eventType === "done") {
                 if (typeof parsed.text === "string") {
                   finalReply = parsed.text;
-                  assistantMessage.textEl.textContent = finalReply;
+                  assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
                   scrollToAnchor(false);
                 }
                 if (pendingSearchResults && pendingSearchResults.length) {
