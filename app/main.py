@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable, Iterator, List, Literal, Optional
 
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
