@@ -280,8 +280,12 @@
             純 LLM
           </label>
           <label>
-            <input type="radio" name="mode" value="search" />
-            網頁查詢 + LLM
+            <input type="radio" name="mode" value="search_duckduckgo" />
+            網頁查詢（DuckDuckGo） + LLM
+          </label>
+          <label>
+            <input type="radio" name="mode" value="search_serpapi" />
+            網頁查詢（SerpAPI） + LLM
           </label>
         </div>
       </header>
@@ -313,6 +317,11 @@
       let activeAnchor = null;
       let autoScrollEnabled = true;
       let isProgrammaticScroll = false;
+      const modeStatusText = {
+        llm_only: "正在產生回應...",
+        search_duckduckgo: "正在以 DuckDuckGo 搜尋並產生回應...",
+        search_serpapi: "正在以 SerpAPI 搜尋並產生回應...",
+      };
 
       function renderMarkdown(markdownText) {
         if (!markdownText) {
@@ -380,7 +389,7 @@
 
       chatLog.addEventListener("scroll", handleScroll, { passive: true });
 
-      function renderSearchResults(wrapper, searchResults = []) {
+      function renderSearchResults(wrapper, searchResults = [], provider = null) {
         const existing = wrapper.querySelector(".search-results");
         if (existing) {
           existing.remove();
@@ -393,7 +402,13 @@
         const resultsBlock = document.createElement("div");
         resultsBlock.className = "search-results";
         const heading = document.createElement("p");
-        heading.textContent = "🔎 使用了即時網頁查詢結果：";
+        let providerLabel = "即時網頁查詢結果";
+        if (provider === "duckduckgo") {
+          providerLabel = "DuckDuckGo 網頁查詢結果";
+        } else if (provider === "serpapi") {
+          providerLabel = "SerpAPI 網頁查詢結果";
+        }
+        heading.textContent = `🔎 使用了${providerLabel}：`;
         const list = document.createElement("ul");
 
         searchResults.forEach((item) => {
@@ -432,7 +447,7 @@
         history.push({ role: "user", content: message });
         const submitButton = form.querySelector("button");
         submitButton.disabled = true;
-        statusEl.textContent = mode === "search" ? "正在搜尋並產生回應..." : "正在產生回應...";
+        statusEl.textContent = modeStatusText[mode] || "正在產生回應...";
 
         let assistantMessage;
         let finalReply = "";
@@ -503,8 +518,15 @@
               }
 
               if (eventType === "meta") {
-                if (parsed.used_search && Array.isArray(parsed.search_results)) {
-                  pendingSearchResults = parsed.search_results;
+                if (parsed.used_search) {
+                  pendingSearchResults = {
+                    provider: parsed.search_provider || null,
+                    results: Array.isArray(parsed.search_results)
+                      ? parsed.search_results
+                      : [],
+                  };
+                } else {
+                  pendingSearchResults = null;
                 }
               } else if (eventType === "delta") {
                 if (parsed.text) {
@@ -518,8 +540,16 @@
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
                   scrollToAnchor(false);
                 }
-                if (pendingSearchResults && pendingSearchResults.length) {
-                  renderSearchResults(assistantMessage.wrapper, pendingSearchResults);
+                if (
+                  pendingSearchResults &&
+                  Array.isArray(pendingSearchResults.results) &&
+                  pendingSearchResults.results.length
+                ) {
+                  renderSearchResults(
+                    assistantMessage.wrapper,
+                    pendingSearchResults.results,
+                    pendingSearchResults.provider || null
+                  );
                 }
                 receivedDone = true;
               } else if (eventType === "error") {

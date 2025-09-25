@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel, Field, validator
+from serpapi import GoogleSearch
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,18 @@ SYSTEM_PROMPT = (
 )
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 client: Optional[OpenAI]
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
 else:
     client = None
     logger.warning("OPENAI_API_KEY not found. LLM requests will fail until it is set.")
+
+if not SERPAPI_API_KEY:
+    logger.info(
+        "SERPAPI_API_KEY not configured. SerpAPI search mode will be unavailable until set."
+    )
 
 
 class SearchResult(BaseModel):
@@ -71,8 +78,11 @@ class ChatRequest(BaseModel):
     """Incoming chat payload from the front-end."""
 
     message: str = Field(..., description="The end-user prompt.")
-    mode: Literal["llm_only", "search"] = Field(
-        "llm_only", description="Choose between pure LLM or search-assisted mode."
+    mode: Literal["llm_only", "search_duckduckgo", "search_serpapi"] = Field(
+        "llm_only",
+        description=(
+            "Choose between pure LLM, DuckDuckGo search-assisted, or SerpAPI search-assisted modes."
+        ),
     )
     history: List[ChatMessage] = Field(
         default_factory=list,
@@ -97,7 +107,7 @@ _ddgs_client = DDGS(timeout=10)
 _ddgs_lock = Lock()
 
 
-def _perform_search(query: str, max_results: int = 3) -> List[SearchResult]:
+def _perform_duckduckgo_search(query: str, max_results: int = 3) -> List[SearchResult]:
     """Query DuckDuckGo for lightweight search snippets."""
 
     query = query.strip()
@@ -134,8 +144,51 @@ def _perform_search(query: str, max_results: int = 3) -> List[SearchResult]:
             results = _fetch("wt-wt")
         return results
     except Exception as exc:  # pragma: no cover - network failure path
-        logger.warning("Search request failed: %s", exc)
+        logger.warning("DuckDuckGo search request failed: %s", exc)
         return []
+
+
+def _perform_serpapi_search(query: str, max_results: int = 3) -> List[SearchResult]:
+    """Query SerpAPI Google Search for rich snippets."""
+
+    query = query.strip()
+    if not query:
+        return []
+
+    if not SERPAPI_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail="SERPAPI_API_KEY is not configured on the server.",
+        )
+
+    params = {
+        "engine": "google",
+        "q": query,
+        "hl": "zh-TW",
+        "gl": "tw",
+        "num": max_results,
+        "api_key": SERPAPI_API_KEY,
+    }
+
+    try:
+        response = GoogleSearch(params).get_dict()
+    except Exception as exc:  # pragma: no cover - network failure path
+        logger.warning("SerpAPI search request failed: %s", exc)
+        return []
+
+    organic_results = response.get("organic_results") or []
+    results: List[SearchResult] = []
+    for item in organic_results:
+        url = (item.get("link") or "").strip()
+        if not url:
+            continue
+        title = (item.get("title") or item.get("snippet") or url).strip()
+        snippet = (item.get("snippet") or item.get("title") or "").strip()
+        results.append(SearchResult(title=title, snippet=snippet, url=url))
+        if len(results) >= max_results:
+            break
+
+    return results
 
 
 def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]) -> List[dict]:
@@ -229,14 +282,20 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         )
 
     search_results: List[SearchResult] = []
-    if request.mode == "search":
-        search_results = _perform_search(request.message)
+    search_provider: Optional[str] = None
+    if request.mode == "search_duckduckgo":
+        search_provider = "duckduckgo"
+        search_results = _perform_duckduckgo_search(request.message)
+    elif request.mode == "search_serpapi":
+        search_provider = "serpapi"
+        search_results = _perform_serpapi_search(request.message)
 
     messages = _build_messages(request, search_results)
 
     def _event_stream() -> Iterator[str]:
         metadata = {
-            "used_search": bool(search_results),
+            "used_search": bool(search_provider),
+            "search_provider": search_provider,
             "search_results": [result.model_dump() for result in search_results],
         }
         yield _format_sse_event("meta", metadata)
