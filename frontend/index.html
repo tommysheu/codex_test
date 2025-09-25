@@ -331,11 +331,24 @@
         return DOMPurify.sanitize(html);
       }
 
+      function getAnchorTop() {
+        if (!activeAnchor || !activeAnchor.isConnected) {
+          return null;
+        }
+        const anchorRect = activeAnchor.getBoundingClientRect();
+        const containerRect = chatLog.getBoundingClientRect();
+        return anchorRect.top - containerRect.top + chatLog.scrollTop;
+      }
+
       function scrollToAnchor(smooth = true) {
         if (!activeAnchor || !autoScrollEnabled) {
           return;
         }
-        const top = Math.max(activeAnchor.offsetTop - 12, 0);
+        const anchorTop = getAnchorTop();
+        if (anchorTop === null) {
+          return;
+        }
+        const top = Math.max(anchorTop - 12, 0);
         isProgrammaticScroll = true;
         if (typeof chatLog.scrollTo === "function") {
           chatLog.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
@@ -378,8 +391,12 @@
         if (!activeAnchor || isProgrammaticScroll) {
           return;
         }
-        const anchorTop = Math.max(activeAnchor.offsetTop - 12, 0);
-        const distance = Math.abs(chatLog.scrollTop - anchorTop);
+        const anchorTop = getAnchorTop();
+        if (anchorTop === null) {
+          return;
+        }
+        const targetTop = Math.max(anchorTop - 12, 0);
+        const distance = Math.abs(chatLog.scrollTop - targetTop);
         if (autoScrollEnabled && distance > 24) {
           autoScrollEnabled = false;
         } else if (!autoScrollEnabled && distance <= 12) {
