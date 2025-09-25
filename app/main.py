@@ -78,10 +78,16 @@ class ChatRequest(BaseModel):
     """Incoming chat payload from the front-end."""
 
     message: str = Field(..., description="The end-user prompt.")
-    mode: Literal["llm_only", "search_duckduckgo", "search_serpapi"] = Field(
+    mode: Literal[
+        "llm_only",
+        "search_duckduckgo",
+        "search_serpapi",
+        "search_auto",
+    ] = Field(
         "llm_only",
         description=(
-            "Choose between pure LLM, DuckDuckGo search-assisted, or SerpAPI search-assisted modes."
+            "Choose between pure LLM, DuckDuckGo search-assisted, SerpAPI search-assisted, "
+            "or automatic SerpAPI-assisted modes."
         ),
     )
     history: List[ChatMessage] = Field(
@@ -105,6 +111,51 @@ async def index() -> FileResponse:
 
 _ddgs_client = DDGS(timeout=10)
 _ddgs_lock = Lock()
+
+_AUTO_SEARCH_KEYWORDS_ZH = {
+    "最新",
+    "近期",
+    "最近",
+    "現在",
+    "目前",
+    "今日",
+    "今天",
+    "本日",
+    "本週",
+    "這週",
+    "下週",
+    "活動",
+    "新聞",
+    "快訊",
+    "更新",
+    "價格",
+    "票價",
+    "開放時間",
+    "時間表",
+    "行程",
+    "直播",
+    "賽況",
+}
+
+_AUTO_SEARCH_KEYWORDS_EN = {
+    "today",
+    "tonight",
+    "latest",
+    "recent",
+    "update",
+    "updates",
+    "news",
+    "event",
+    "events",
+    "schedule",
+    "release date",
+    "price",
+    "prices",
+    "opening hours",
+    "ticket",
+    "tickets",
+    "breaking",
+}
 
 
 def _perform_duckduckgo_search(query: str, max_results: int = 3) -> List[SearchResult]:
@@ -189,6 +240,31 @@ def _perform_serpapi_search(query: str, max_results: int = 3) -> List[SearchResu
             break
 
     return results
+
+
+def _should_use_auto_search(query: str) -> bool:
+    """Heuristically determine if the prompt needs fresh web context."""
+
+    query = query.strip()
+    if not query:
+        return False
+
+    lowered = query.lower()
+    if any(keyword in lowered for keyword in _AUTO_SEARCH_KEYWORDS_EN):
+        return True
+
+    # Normalize common punctuation before checking Traditional Chinese keywords.
+    normalized = query.replace("？", "?").replace("！", "!")
+    if any(keyword in normalized for keyword in _AUTO_SEARCH_KEYWORDS_ZH):
+        return True
+
+    # Prefer search for questions explicitly asking for time-sensitive info.
+    if "?" in normalized or "？" in query:
+        time_words = ("什麼時候", "何時", "多久", "在哪裡", "在哪裡可以", "哪裡買")
+        if any(word in normalized for word in time_words):
+            return True
+
+    return False
 
 
 def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]) -> List[dict]:
@@ -283,12 +359,18 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
     search_results: List[SearchResult] = []
     search_provider: Optional[str] = None
+    auto_search_triggered = False
     if request.mode == "search_duckduckgo":
         search_provider = "duckduckgo"
         search_results = _perform_duckduckgo_search(request.message)
     elif request.mode == "search_serpapi":
         search_provider = "serpapi"
         search_results = _perform_serpapi_search(request.message)
+    elif request.mode == "search_auto":
+        if _should_use_auto_search(request.message):
+            search_provider = "serpapi"
+            auto_search_triggered = True
+            search_results = _perform_serpapi_search(request.message)
 
     messages = _build_messages(request, search_results)
 
@@ -297,6 +379,8 @@ async def chat(request: ChatRequest) -> StreamingResponse:
             "used_search": bool(search_provider),
             "search_provider": search_provider,
             "search_results": [result.model_dump() for result in search_results],
+            "mode": request.mode,
+            "auto_search_triggered": auto_search_triggered,
         }
         yield _format_sse_event("meta", metadata)
         try:

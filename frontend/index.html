@@ -287,6 +287,10 @@
             <input type="radio" name="mode" value="search_serpapi" />
             網頁查詢（SerpAPI） + LLM
           </label>
+          <label>
+            <input type="radio" name="mode" value="search_auto" />
+            網頁查詢（自動判斷） + LLM
+          </label>
         </div>
       </header>
       <main id="chat-log" aria-live="polite"></main>
@@ -321,6 +325,7 @@
         llm_only: "正在產生回應...",
         search_duckduckgo: "正在以 DuckDuckGo 搜尋並產生回應...",
         search_serpapi: "正在以 SerpAPI 搜尋並產生回應...",
+        search_auto: "正在判斷是否需要搜尋並產生回應...",
       };
 
       function renderMarkdown(markdownText) {
@@ -406,7 +411,12 @@
 
       chatLog.addEventListener("scroll", handleScroll, { passive: true });
 
-      function renderSearchResults(wrapper, searchResults = [], provider = null) {
+      function renderSearchResults(
+        wrapper,
+        searchResults = [],
+        provider = null,
+        { autoTriggered = false } = {}
+      ) {
         const existing = wrapper.querySelector(".search-results");
         if (existing) {
           existing.remove();
@@ -423,7 +433,9 @@
         if (provider === "duckduckgo") {
           providerLabel = "DuckDuckGo 網頁查詢結果";
         } else if (provider === "serpapi") {
-          providerLabel = "SerpAPI 網頁查詢結果";
+          providerLabel = autoTriggered
+            ? "SerpAPI（自動判斷）網頁查詢結果"
+            : "SerpAPI 網頁查詢結果";
         }
         heading.textContent = `🔎 使用了${providerLabel}：`;
         const list = document.createElement("ul");
@@ -541,9 +553,18 @@
                     results: Array.isArray(parsed.search_results)
                       ? parsed.search_results
                       : [],
+                    autoTriggered: Boolean(parsed.auto_search_triggered),
                   };
                 } else {
                   pendingSearchResults = null;
+                }
+
+                if (parsed.mode === "search_auto") {
+                  if (parsed.auto_search_triggered) {
+                    statusEl.textContent = "偵測到需要搜尋，正在以 SerpAPI 搜尋並產生回應...";
+                  } else {
+                    statusEl.textContent = "判斷不需即時搜尋，使用 LLM 回覆中...";
+                  }
                 }
               } else if (eventType === "delta") {
                 if (parsed.text) {
@@ -565,7 +586,8 @@
                   renderSearchResults(
                     assistantMessage.wrapper,
                     pendingSearchResults.results,
-                    pendingSearchResults.provider || null
+                    pendingSearchResults.provider || null,
+                    { autoTriggered: Boolean(pendingSearchResults.autoTriggered) }
                   );
                 }
                 receivedDone = true;
