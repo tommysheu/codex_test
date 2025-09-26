@@ -325,22 +325,26 @@
         search_auto: "正在判斷是否需要搜尋並產生回應...",
       };
 
-      function scrollToBottom({ smooth = false } = {}) {
-        const behavior = smooth ? "smooth" : "auto";
-        const targetTop = chatLog.scrollHeight;
-        if (typeof chatLog.scrollTo === "function") {
-          chatLog.scrollTo({ top: targetTop, behavior });
-        } else {
-          chatLog.scrollTop = targetTop;
-        }
-      }
-
       function renderMarkdown(markdownText) {
         if (!markdownText) {
           return "";
         }
         const html = marked.parse(markdownText);
         return DOMPurify.sanitize(html);
+      }
+
+      function pinMessageToTop(wrapper) {
+        requestAnimationFrame(() => {
+          if (typeof wrapper.scrollIntoView === "function") {
+            wrapper.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+          } else {
+            const targetTop = Math.max(
+              0,
+              wrapper.offsetTop - chatLog.offsetTop - 16
+            );
+            chatLog.scrollTop = targetTop;
+          }
+        });
       }
 
       function createMessage(role, initialText = "") {
@@ -355,7 +359,9 @@
         }
         wrapper.appendChild(textEl);
         chatLog.appendChild(wrapper);
-        scrollToBottom();
+        if (role === "user") {
+          pinMessageToTop(wrapper);
+        }
         return { wrapper, textEl };
       }
 
@@ -409,7 +415,6 @@
         resultsBlock.appendChild(heading);
         resultsBlock.appendChild(list);
         wrapper.appendChild(resultsBlock);
-        scrollToBottom();
       }
 
       async function sendMessage(event) {
@@ -518,13 +523,11 @@
                 if (parsed.text) {
                   finalReply += parsed.text;
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
-                  scrollToBottom({ smooth: true });
                 }
               } else if (eventType === "done") {
                 if (typeof parsed.text === "string") {
                   finalReply = parsed.text;
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
-                  scrollToBottom({ smooth: true });
                 }
                 if (
                   pendingSearchResults &&
@@ -537,7 +540,6 @@
                     pendingSearchResults.provider || null,
                     { autoTriggered: Boolean(pendingSearchResults.autoTriggered) }
                   );
-                  scrollToBottom({ smooth: true });
                 }
                 receivedDone = true;
               } else if (eventType === "error") {
@@ -572,7 +574,6 @@
             assistantMessage = createMessage("assistant", "");
           }
           assistantMessage.textEl.textContent = `⚠️ ${error.message}`;
-          scrollToBottom({ smooth: true });
           statusEl.textContent = "錯誤";
         } finally {
           submitButton.disabled = false;
