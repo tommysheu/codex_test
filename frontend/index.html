@@ -325,48 +325,14 @@
         search_auto: "正在判斷是否需要搜尋並產生回應...",
       };
 
-      let anchorMessage = null;
-      let anchorSpacing = 0;
-      let autoScrollEnabled = true;
-      let isProgrammaticScroll = false;
-
-      function scheduleProgrammaticFlagReset() {
-        if (typeof window.requestAnimationFrame === "function") {
-          window.requestAnimationFrame(() => {
-            isProgrammaticScroll = false;
-          });
-        } else {
-          setTimeout(() => {
-            isProgrammaticScroll = false;
-          }, 16);
-        }
-      }
-
-      function performScroll(top, behavior = "auto") {
-        isProgrammaticScroll = true;
+      function scrollToBottom({ smooth = false } = {}) {
+        const behavior = smooth ? "smooth" : "auto";
+        const targetTop = chatLog.scrollHeight;
         if (typeof chatLog.scrollTo === "function") {
-          chatLog.scrollTo({ top, behavior });
+          chatLog.scrollTo({ top: targetTop, behavior });
         } else {
-          chatLog.scrollTop = top;
+          chatLog.scrollTop = targetTop;
         }
-        scheduleProgrammaticFlagReset();
-      }
-
-      function maintainAnchor({ smooth = false } = {}) {
-        if (!anchorMessage || !autoScrollEnabled) {
-          return;
-        }
-        const targetTop = Math.max(anchorMessage.offsetTop - anchorSpacing, 0);
-        if (Math.abs(chatLog.scrollTop - targetTop) > 1) {
-          performScroll(targetTop, smooth ? "smooth" : "auto");
-        }
-      }
-
-      function setAnchor(element) {
-        anchorMessage = element;
-        anchorSpacing = 0;
-        autoScrollEnabled = true;
-        maintainAnchor();
       }
 
       function renderMarkdown(markdownText) {
@@ -389,11 +355,7 @@
         }
         wrapper.appendChild(textEl);
         chatLog.appendChild(wrapper);
-        if (role === "user") {
-          setAnchor(wrapper);
-        } else {
-          maintainAnchor();
-        }
+        scrollToBottom();
         return { wrapper, textEl };
       }
 
@@ -447,33 +409,8 @@
         resultsBlock.appendChild(heading);
         resultsBlock.appendChild(list);
         wrapper.appendChild(resultsBlock);
-        maintainAnchor();
+        scrollToBottom();
       }
-
-      chatLog.addEventListener("scroll", () => {
-        if (!anchorMessage || isProgrammaticScroll) {
-          return;
-        }
-
-        const currentSpacing = anchorMessage.offsetTop - chatLog.scrollTop;
-
-        if (!autoScrollEnabled) {
-          anchorSpacing = currentSpacing;
-          if (Math.abs(currentSpacing) <= 4) {
-            autoScrollEnabled = true;
-            maintainAnchor();
-          }
-          return;
-        }
-
-        if (Math.abs(currentSpacing - anchorSpacing) > 6) {
-          autoScrollEnabled = false;
-          anchorSpacing = currentSpacing;
-          return;
-        }
-
-        anchorSpacing = currentSpacing;
-      });
 
       async function sendMessage(event) {
         event.preventDefault();
@@ -581,13 +518,13 @@
                 if (parsed.text) {
                   finalReply += parsed.text;
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
-                  maintainAnchor();
+                  scrollToBottom({ smooth: true });
                 }
               } else if (eventType === "done") {
                 if (typeof parsed.text === "string") {
                   finalReply = parsed.text;
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
-                  maintainAnchor();
+                  scrollToBottom({ smooth: true });
                 }
                 if (
                   pendingSearchResults &&
@@ -600,7 +537,7 @@
                     pendingSearchResults.provider || null,
                     { autoTriggered: Boolean(pendingSearchResults.autoTriggered) }
                   );
-                  maintainAnchor();
+                  scrollToBottom({ smooth: true });
                 }
                 receivedDone = true;
               } else if (eventType === "error") {
@@ -635,7 +572,7 @@
             assistantMessage = createMessage("assistant", "");
           }
           assistantMessage.textEl.textContent = `⚠️ ${error.message}`;
-          maintainAnchor();
+          scrollToBottom({ smooth: true });
           statusEl.textContent = "錯誤";
         } finally {
           submitButton.disabled = false;
