@@ -333,6 +333,9 @@
         return DOMPurify.sanitize(html);
       }
 
+      let anchorMessage = null;
+      let anchorAlignedForReply = false;
+
       function pinMessageToTop(wrapper) {
         requestAnimationFrame(() => {
           if (typeof wrapper.scrollIntoView === "function") {
@@ -345,6 +348,14 @@
             chatLog.scrollTop = targetTop;
           }
         });
+      }
+
+      function alignAnchorForReply() {
+        if (!anchorMessage || anchorAlignedForReply) {
+          return;
+        }
+        pinMessageToTop(anchorMessage);
+        anchorAlignedForReply = true;
       }
 
       function createMessage(role, initialText = "") {
@@ -360,6 +371,8 @@
         wrapper.appendChild(textEl);
         chatLog.appendChild(wrapper);
         if (role === "user") {
+          anchorMessage = wrapper;
+          anchorAlignedForReply = false;
           pinMessageToTop(wrapper);
         }
         return { wrapper, textEl };
@@ -461,6 +474,7 @@
           }
 
           assistantMessage = createMessage("assistant", "");
+          alignAnchorForReply();
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
