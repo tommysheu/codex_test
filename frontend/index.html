@@ -247,14 +247,14 @@
         background: rgba(15, 23, 42, 0.92);
         display: grid;
         gap: 14px;
-        max-height: min(320px, 45vh);
+        max-height: min(214px, 30vh);
         overflow-y: auto;
       }
 
       textarea {
         width: 100%;
         resize: none;
-        min-height: 90px;
+        min-height: 45px;
         padding: 14px;
         border-radius: 12px;
         border: 1px solid rgba(148, 163, 184, 0.25);
@@ -396,22 +396,22 @@
           </label>
           <label>
             <input type="radio" name="mode" value="search_duckduckgo" />
-            網頁查詢（DuckDuckGo） + LLM
+            DuckDuckGo + LLM
           </label>
           <label>
             <input type="radio" name="mode" value="search_serpapi" />
-            網頁查詢（SerpAPI） + LLM
+            SerpAPI + LLM
           </label>
           <label>
             <input type="radio" name="mode" value="search_auto" />
-            網頁查詢（自動判斷） + LLM
+            自動（SerpAPI） + LLM
           </label>
         </div>
       </header>
       <main id="chat-log" aria-live="polite"></main>
       <form id="chat-form">
         <div class="upload-section">
-          <label for="file-input">上傳參考檔案</label>
+          <label for="file-input">附件</label>
           <div class="upload-controls">
             <input
               type="file"
@@ -420,7 +420,7 @@
               multiple
             />
           </div>
-          <p class="upload-help">支援 PDF 與純文字檔，內容將提供給模型參考。</p>
+          <p class="upload-help">支援 PDF、純文字，作為回答參考。</p>
           <div class="upload-status" id="upload-status"></div>
           <ul class="uploads-list" id="uploads-list"></ul>
         </div>
