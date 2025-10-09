@@ -149,6 +149,27 @@
         color: #38bdf8;
       }
 
+      .attachments-list {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.8rem;
+        color: rgba(226, 232, 240, 0.82);
+      }
+
+      .attachments-list li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .attachments-list li::before {
+        content: "📎";
+      }
+
       .message.user {
         align-self: flex-end;
         background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.95));
@@ -199,12 +220,33 @@
         color: rgba(226, 232, 240, 0.82);
       }
 
+      .document-usage {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        font-size: 0.8rem;
+        color: rgba(226, 232, 240, 0.85);
+      }
+
+      .document-usage p {
+        margin: 0;
+        font-weight: 600;
+        color: #a5b4fc;
+      }
+
+      .document-usage ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
       form {
         padding: 20px 24px;
         border-top: 1px solid rgba(148, 163, 184, 0.16);
         background: rgba(15, 23, 42, 0.92);
         display: grid;
-        gap: 12px;
+        gap: 14px;
       }
 
       textarea {
@@ -256,6 +298,75 @@
         min-height: 1em;
       }
 
+      .upload-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .upload-section label {
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .upload-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .upload-controls input[type="file"] {
+        color: inherit;
+      }
+
+      .upload-help {
+        font-size: 0.8rem;
+        color: rgba(148, 163, 184, 0.75);
+        margin: 0;
+      }
+
+      .upload-status {
+        font-size: 0.8rem;
+        color: rgba(148, 163, 184, 0.9);
+        min-height: 1em;
+      }
+
+      .uploads-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .upload-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.6);
+        font-size: 0.85rem;
+      }
+
+      .upload-item span {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .upload-item button {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+        border-radius: 999px;
+        background: rgba(239, 68, 68, 0.85);
+        color: #f8fafc;
+      }
+
       @media (max-width: 600px) {
         header {
           flex-direction: column;
@@ -295,6 +406,20 @@
       </header>
       <main id="chat-log" aria-live="polite"></main>
       <form id="chat-form">
+        <div class="upload-section">
+          <label for="file-input">上傳參考檔案</label>
+          <div class="upload-controls">
+            <input
+              type="file"
+              id="file-input"
+              accept=".pdf,.txt,.md,.markdown,.csv"
+              multiple
+            />
+          </div>
+          <p class="upload-help">支援 PDF 與純文字檔，內容將提供給模型參考。</p>
+          <div class="upload-status" id="upload-status"></div>
+          <ul class="uploads-list" id="uploads-list"></ul>
+        </div>
         <textarea
           id="message-input"
           placeholder="輸入您的問題或想聊的話題..."
@@ -317,7 +442,11 @@
       const form = document.getElementById("chat-form");
       const messageInput = document.getElementById("message-input");
       const statusEl = document.getElementById("status");
+      const fileInput = document.getElementById("file-input");
+      const uploadsList = document.getElementById("uploads-list");
+      const uploadStatusEl = document.getElementById("upload-status");
       let history = [];
+      let uploadedDocuments = [];
       const modeStatusText = {
         llm_only: "正在產生回應...",
         search_duckduckgo: "正在以 DuckDuckGo 搜尋並產生回應...",
@@ -335,6 +464,87 @@
 
       let anchorMessage = null;
       let anchorAlignedForReply = false;
+
+      function updateUploadsList() {
+        uploadsList.innerHTML = "";
+        if (!uploadedDocuments.length) {
+          return;
+        }
+
+        uploadedDocuments.forEach((doc, index) => {
+          const item = document.createElement("li");
+          item.className = "upload-item";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = doc.filename;
+          item.appendChild(nameSpan);
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.textContent = "移除";
+          removeButton.addEventListener("click", () => {
+            uploadedDocuments = uploadedDocuments.filter((_, i) => i !== index);
+            updateUploadsList();
+          });
+          item.appendChild(removeButton);
+
+          uploadsList.appendChild(item);
+        });
+      }
+
+      async function handleFileSelection(event) {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) {
+          return;
+        }
+
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append("file", file);
+          try {
+            uploadStatusEl.textContent = `正在上傳 ${file.name}...`;
+            const response = await fetch("/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!response.ok) {
+              let detail = "檔案上傳失敗";
+              try {
+                const payload = await response.json();
+                if (payload && payload.detail) {
+                  detail = payload.detail;
+                }
+              } catch (err) {
+                // ignore parse errors
+              }
+              throw new Error(detail);
+            }
+            const payload = await response.json();
+            uploadedDocuments.push({
+              id: payload.document_id,
+              filename: payload.filename || file.name,
+              charCount: payload.char_count || 0,
+            });
+            updateUploadsList();
+            uploadStatusEl.textContent = `${file.name} 上傳完成`;
+          } catch (error) {
+            console.error(error);
+            uploadStatusEl.textContent = `上傳失敗：${error.message}`;
+          }
+        }
+
+        setTimeout(() => {
+          uploadStatusEl.textContent = "";
+        }, 4000);
+
+        if (fileInput) {
+          fileInput.value = "";
+        }
+      }
+
+      if (fileInput) {
+        fileInput.addEventListener("change", handleFileSelection);
+      }
 
       function pinMessageToTop(wrapper) {
         requestAnimationFrame(() => {
@@ -358,7 +568,7 @@
         anchorAlignedForReply = true;
       }
 
-      function createMessage(role, initialText = "") {
+      function createMessage(role, initialText = "", options = {}) {
         const wrapper = document.createElement("div");
         wrapper.className = `message ${role}`;
         const textEl = document.createElement("div");
@@ -369,6 +579,9 @@
           textEl.textContent = initialText;
         }
         wrapper.appendChild(textEl);
+        if (role === "user") {
+          renderUserAttachments(wrapper, options.attachments || []);
+        }
         chatLog.appendChild(wrapper);
         if (role === "user") {
           anchorMessage = wrapper;
@@ -376,6 +589,20 @@
           pinMessageToTop(wrapper);
         }
         return { wrapper, textEl };
+      }
+
+      function renderUserAttachments(wrapper, attachments = []) {
+        if (!attachments.length) {
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "attachments-list";
+        attachments.forEach((attachment) => {
+          const item = document.createElement("li");
+          item.textContent = attachment.name;
+          list.appendChild(item);
+        });
+        wrapper.appendChild(list);
       }
 
       function renderSearchResults(
@@ -430,6 +657,33 @@
         wrapper.appendChild(resultsBlock);
       }
 
+      function renderDocumentUsage(wrapper, documents = []) {
+        const existing = wrapper.querySelector(".document-usage");
+        if (existing) {
+          existing.remove();
+        }
+        if (!documents.length) {
+          return;
+        }
+
+        const block = document.createElement("div");
+        block.className = "document-usage";
+        const heading = document.createElement("p");
+        heading.textContent = "📎 本次參考了上傳檔案：";
+        const list = document.createElement("ul");
+
+        documents.forEach((doc) => {
+          const listItem = document.createElement("li");
+          const match = uploadedDocuments.find((item) => item.id === doc.id);
+          listItem.textContent = match ? match.filename : doc.filename || doc.id;
+          list.appendChild(listItem);
+        });
+
+        block.appendChild(heading);
+        block.appendChild(list);
+        wrapper.appendChild(block);
+      }
+
       async function sendMessage(event) {
         event.preventDefault();
         const message = messageInput.value.trim();
@@ -438,7 +692,8 @@
         }
 
         const mode = document.querySelector('input[name="mode"]:checked').value;
-        createMessage("user", message);
+        const attachmentsForMessage = uploadedDocuments.map((doc) => ({ name: doc.filename }));
+        createMessage("user", message, { attachments: attachmentsForMessage });
         history.push({ role: "user", content: message });
         const submitButton = form.querySelector("button");
         submitButton.disabled = true;
@@ -448,12 +703,18 @@
         let finalReply = "";
         let receivedDone = false;
         let pendingSearchResults = null;
+        let pendingDocumentUsage = null;
 
         try {
           const response = await fetch("/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, mode, history }),
+            body: JSON.stringify({
+              message,
+              mode,
+              history,
+              documents: uploadedDocuments.map((doc) => doc.id),
+            }),
           });
 
           if (!response.ok || !response.body) {
@@ -526,6 +787,12 @@
                   pendingSearchResults = null;
                 }
 
+                if (Array.isArray(parsed.documents)) {
+                  pendingDocumentUsage = parsed.documents;
+                } else {
+                  pendingDocumentUsage = null;
+                }
+
                 if (parsed.mode === "search_auto") {
                   if (parsed.auto_search_triggered) {
                     statusEl.textContent = "偵測到需要搜尋，正在以 SerpAPI 搜尋並產生回應...";
@@ -543,6 +810,12 @@
                   finalReply = parsed.text;
                   assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
                 }
+                if (pendingDocumentUsage && pendingDocumentUsage.length) {
+                  renderDocumentUsage(
+                    assistantMessage.wrapper,
+                    pendingDocumentUsage
+                  );
+                }
                 if (
                   pendingSearchResults &&
                   Array.isArray(pendingSearchResults.results) &&
@@ -556,6 +829,7 @@
                   );
                 }
                 receivedDone = true;
+                pendingDocumentUsage = null;
               } else if (eventType === "error") {
                 throw new Error(parsed.message || "伺服器發生錯誤");
               }

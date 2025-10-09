@@ -1,21 +1,24 @@
 """FastAPI backend for GPT-4o powered chatbot."""
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, Iterator, List, Literal, Optional
+from typing import Dict, Iterable, Iterator, List, Literal, Optional
+from uuid import uuid4
 
 from ddgs import DDGS
-from fastapi import FastAPI, HTTPException
+from fastapi import File, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel, Field, validator
 from serpapi import GoogleSearch
+from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,10 @@ class ChatRequest(BaseModel):
         default_factory=list,
         description="Conversation history to maintain context across turns.",
     )
+    documents: List[str] = Field(
+        default_factory=list,
+        description="Identifiers for uploaded documents to reference in the reply.",
+    )
 
     @validator("history", each_item=True)
     def _strip_empty_history(cls, msg: ChatMessage) -> ChatMessage:
@@ -109,8 +116,32 @@ async def index() -> FileResponse:
     return FileResponse(index_file)
 
 
+@app.post("/upload")
+async def upload_document(file: UploadFile = File(...)) -> dict:
+    """Accept a reference document upload and store it for later chat turns."""
+
+    filename = file.filename or "uploaded_document"
+    try:
+        raw_bytes = await file.read()
+        content = _extract_text_from_upload(filename, file.content_type, raw_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    record = _store_document(filename, content)
+    return {
+        "document_id": record["document_id"],
+        "filename": record["filename"],
+        "char_count": len(content),
+    }
+
+
 _ddgs_client = DDGS(timeout=10)
 _ddgs_lock = Lock()
+
+_documents_lock = Lock()
+_uploaded_documents: Dict[str, Dict[str, str]] = {}
+
+_MAX_DOCUMENT_CHARS = 12_000
 
 _AUTO_SEARCH_KEYWORDS_ZH = {
     "最新",
@@ -156,6 +187,83 @@ _AUTO_SEARCH_KEYWORDS_EN = {
     "tickets",
     "breaking",
 }
+
+
+def _normalize_document_text(text: str) -> str:
+    """Trim and limit uploaded document text for prompt injection."""
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    normalized = "\n".join(lines)
+    if len(normalized) > _MAX_DOCUMENT_CHARS:
+        normalized = normalized[:_MAX_DOCUMENT_CHARS]
+    return normalized
+
+
+def _extract_text_from_upload(filename: str, content_type: Optional[str], data: bytes) -> str:
+    """Extract textual content from an uploaded file."""
+
+    if not data:
+        raise ValueError("檔案為空，無法取得內容。")
+
+    suffix = Path(filename or "").suffix.lower()
+    if (suffix == ".pdf") or (content_type == "application/pdf"):
+        try:
+            reader = PdfReader(io.BytesIO(data))
+        except Exception as exc:  # pragma: no cover - malformed PDF path
+            raise ValueError(f"PDF 解析失敗：{exc}") from exc
+        extracted_parts: List[str] = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            if text:
+                extracted_parts.append(text)
+        extracted = "\n".join(extracted_parts)
+    elif (content_type and content_type.startswith("text/")) or suffix in {
+        ".txt",
+        ".md",
+        ".markdown",
+        ".csv",
+    }:
+        try:
+            extracted = data.decode("utf-8")
+        except UnicodeDecodeError:
+            extracted = data.decode("utf-8", errors="ignore")
+    else:
+        try:
+            extracted = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("此檔案格式不支援，請提供 PDF 或純文字檔。") from exc
+
+    normalized = _normalize_document_text(extracted)
+    if not normalized:
+        raise ValueError("檔案內容為空，請確認檔案是否含有文字。")
+    return normalized
+
+
+def _store_document(filename: str, content: str) -> dict:
+    """Persist the uploaded document in memory and return metadata."""
+
+    document_id = uuid4().hex
+    with _documents_lock:
+        _uploaded_documents[document_id] = {"filename": filename, "content": content}
+    return {"document_id": document_id, "filename": filename}
+
+
+def _resolve_documents(document_ids: Iterable[str]) -> List[dict]:
+    """Fetch stored documents referenced in a chat request."""
+
+    resolved: List[dict] = []
+    missing: List[str] = []
+    with _documents_lock:
+        for document_id in document_ids:
+            record = _uploaded_documents.get(document_id)
+            if record:
+                resolved.append({"id": document_id, **record})
+            else:
+                missing.append(document_id)
+
+    if missing:
+        raise HTTPException(status_code=404, detail=f"找不到以下文件：{', '.join(missing)}")
+    return resolved
 
 
 def _perform_duckduckgo_search(query: str, max_results: int = 3) -> List[SearchResult]:
@@ -267,11 +375,37 @@ def _should_use_auto_search(query: str) -> bool:
     return False
 
 
-def _build_messages(request: ChatRequest, search_results: Iterable[SearchResult]) -> List[dict]:
+def _build_messages(
+    request: ChatRequest,
+    search_results: Iterable[SearchResult],
+    documents: Iterable[dict],
+) -> List[dict]:
     """Compose the message array sent to GPT-4o."""
 
     messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(message.model_dump() for message in request.history)
+    document_lines: List[str] = []
+    for document in documents:
+        document_lines.append(
+            "\n".join(
+                [
+                    f"Filename: {document['filename']}",
+                    "Content:",
+                    document["content"],
+                ]
+            )
+        )
+    if document_lines:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "The user uploaded reference documents. Use the provided content "
+                    "when answering, cite them as 'uploaded document', and prefer the "
+                    "user's own wording when summarising.\n\n" + "\n\n".join(document_lines)
+                ),
+            }
+        )
     context_lines = []
     for result in search_results:
         context_lines.append(f"Title: {result.title}\nURL: {result.url}\nSnippet: {result.snippet}")
@@ -360,6 +494,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     search_results: List[SearchResult] = []
     search_provider: Optional[str] = None
     auto_search_triggered = False
+    documents = _resolve_documents(request.documents)
     if request.mode == "search_duckduckgo":
         search_provider = "duckduckgo"
         search_results = _perform_duckduckgo_search(request.message)
@@ -372,7 +507,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
             auto_search_triggered = True
             search_results = _perform_serpapi_search(request.message)
 
-    messages = _build_messages(request, search_results)
+    messages = _build_messages(request, search_results, documents)
 
     def _event_stream() -> Iterator[str]:
         metadata = {
@@ -381,6 +516,10 @@ async def chat(request: ChatRequest) -> StreamingResponse:
             "search_results": [result.model_dump() for result in search_results],
             "mode": request.mode,
             "auto_search_triggered": auto_search_triggered,
+            "documents": [
+                {"id": document["id"], "filename": document["filename"]}
+                for document in documents
+            ],
         }
         yield _format_sse_event("meta", metadata)
         try:
