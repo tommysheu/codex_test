@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT-4o Chatbot</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+        background-color: #0f172a;
+        color: #e2e8f0;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.25), transparent 55%),
+          radial-gradient(circle at bottom, rgba(236, 72, 153, 0.2), transparent 40%),
+          #0f172a;
+      }
+
+      .app {
+        width: min(960px, 92vw);
+        height: min(720px, 92vh);
+        backdrop-filter: blur(18px);
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 18px;
+        box-shadow: 0 35px 80px rgba(15, 23, 42, 0.55);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      header {
+        padding: 18px 24px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.45rem;
+      }
+
+      .mode-select {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 0.95rem;
+      }
+
+      .mode-select label {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      main {
+        flex: 1;
+        padding: 24px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        scroll-behavior: smooth;
+      }
+
+      .message {
+        max-width: 80%;
+        padding: 14px 18px;
+        border-radius: 16px;
+        line-height: 1.35;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.25);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .message-text {
+        white-space: normal;
+        word-break: break-word;
+      }
+
+      .message.user .message-text {
+        white-space: pre-wrap;
+      }
+
+      .message-text p {
+        margin: 0 0 0.5em;
+      }
+
+      .message-text p:last-child {
+        margin-bottom: 0;
+      }
+
+      .message-text ul,
+      .message-text ol {
+        margin: 0.5em 0;
+        padding-left: 1.25em;
+      }
+
+      .message-text li {
+        margin: 0.25em 0;
+      }
+
+      .message-text code {
+        font-family: "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 6px;
+        padding: 0.15em 0.4em;
+        font-size: 0.95em;
+      }
+
+      .message-text pre {
+        font-family: "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        padding: 1em;
+        margin: 0.75em 0;
+        overflow-x: auto;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+      }
+
+      .message-text pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.95em;
+      }
+
+      .message-text blockquote {
+        margin: 0.75em 0;
+        padding-left: 1em;
+        border-left: 4px solid rgba(148, 163, 184, 0.35);
+        color: rgba(226, 232, 240, 0.85);
+      }
+
+      .message-text a {
+        color: #38bdf8;
+      }
+
+      .attachments-list {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.8rem;
+        color: rgba(226, 232, 240, 0.82);
+      }
+
+      .attachments-list li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .attachments-list li::before {
+        content: "📎";
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.95));
+        color: #f8fafc;
+      }
+
+      .message.assistant {
+        align-self: flex-start;
+        background: rgba(30, 41, 59, 0.85);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+
+      .search-results {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        font-size: 0.85rem;
+      }
+
+      .search-results p {
+        margin: 0 0 6px;
+        font-weight: 600;
+        color: #38bdf8;
+      }
+
+      .search-results ul {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .search-results a {
+        color: #fbbf24;
+        text-decoration: none;
+      }
+
+      .search-results a:hover {
+        text-decoration: underline;
+      }
+
+      .search-results li {
+        list-style: disc;
+      }
+
+      .search-results li p {
+        margin: 4px 0 0;
+        color: rgba(226, 232, 240, 0.82);
+      }
+
+      .document-usage {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        font-size: 0.8rem;
+        color: rgba(226, 232, 240, 0.85);
+      }
+
+      .document-usage p {
+        margin: 0;
+        font-weight: 600;
+        color: #a5b4fc;
+      }
+
+      .document-usage ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      form {
+        padding: 20px 24px;
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(15, 23, 42, 0.92);
+        display: grid;
+        gap: 14px;
+        max-height: min(240px, 45vh);
+        overflow-y: auto;
+      }
+
+      textarea {
+        width: 100%;
+        resize: none;
+        min-height: 45px;
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(15, 23, 42, 0.7);
+        color: inherit;
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: rgba(59, 130, 246, 0.8);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+      }
+
+      button {
+        justify-self: end;
+        padding: 12px 28px;
+        border: none;
+        border-radius: 999px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        background: linear-gradient(135deg, #38bdf8, #6366f1);
+        color: #0f172a;
+        transition: transform 0.2s ease;
+      }
+
+      button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.7;
+        transform: none !important;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .status {
+        font-size: 0.85rem;
+        color: rgba(148, 163, 184, 0.9);
+        text-align: right;
+        min-height: 1em;
+      }
+
+      .upload-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .upload-section label {
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .upload-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .upload-controls input[type="file"] {
+        color: inherit;
+      }
+
+      .upload-help {
+        font-size: 0.8rem;
+        color: rgba(148, 163, 184, 0.75);
+        margin: 0;
+      }
+
+      .upload-status {
+        font-size: 0.8rem;
+        color: rgba(148, 163, 184, 0.9);
+        min-height: 1em;
+      }
+
+      .uploads-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      .upload-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.6);
+        font-size: 0.85rem;
+      }
+
+      .upload-item span {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .upload-item button {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+        border-radius: 999px;
+        background: rgba(239, 68, 68, 0.85);
+        color: #f8fafc;
+      }
+
+      @media (max-width: 600px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .message {
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>GPT-4o Chatbot</h1>
+        <div class="mode-select">
+          <span>模式：</span>
+          <label>
+            <input type="radio" name="mode" value="llm_only" checked />
+            純 LLM
+          </label>
+          <label>
+            <input type="radio" name="mode" value="search_duckduckgo" />
+            DuckDuckGo + LLM
+          </label>
+          <label>
+            <input type="radio" name="mode" value="search_serpapi" />
+            SerpAPI + LLM
+          </label>
+          <label>
+            <input type="radio" name="mode" value="search_auto" />
+            自動（SerpAPI） + LLM
+          </label>
+        </div>
+      </header>
+      <main id="chat-log" aria-live="polite"></main>
+      <form id="chat-form">
+        <div class="upload-section">
+          <label for="file-input">附件(支援 PDF、純文字，作為回答參考)</label>
+          <div class="upload-controls">
+            <input
+              type="file"
+              id="file-input"
+              accept=".pdf,.txt,.md,.markdown,.csv"
+              multiple
+            />
+          </div>
+          <div class="upload-status" id="upload-status"></div>
+          <ul class="uploads-list" id="uploads-list"></ul>
+        </div>
+        <textarea
+          id="message-input"
+          placeholder="輸入您的問題或想聊的話題..."
+          required
+        ></textarea>
+        <button type="submit">送出</button>
+        <div class="status" id="status"></div>
+      </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
+    <script>
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+      });
+
+      const chatLog = document.getElementById("chat-log");
+      const form = document.getElementById("chat-form");
+      const messageInput = document.getElementById("message-input");
+      const statusEl = document.getElementById("status");
+      const fileInput = document.getElementById("file-input");
+      const uploadsList = document.getElementById("uploads-list");
+      const uploadStatusEl = document.getElementById("upload-status");
+      let history = [];
+      let uploadedDocuments = [];
+      const modeStatusText = {
+        llm_only: "正在產生回應...",
+        search_duckduckgo: "正在以 DuckDuckGo 搜尋並產生回應...",
+        search_serpapi: "正在以 SerpAPI 搜尋並產生回應...",
+        search_auto: "正在判斷是否需要搜尋並產生回應...",
+      };
+
+      messageInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+          return;
+        }
+        event.preventDefault();
+        form.requestSubmit();
+      });
+
+      function renderMarkdown(markdownText) {
+        if (!markdownText) {
+          return "";
+        }
+        const html = marked.parse(markdownText);
+        return DOMPurify.sanitize(html);
+      }
+
+      let anchorMessage = null;
+      let anchorAlignedForReply = false;
+
+      function updateUploadsList() {
+        uploadsList.innerHTML = "";
+        if (!uploadedDocuments.length) {
+          return;
+        }
+
+        uploadedDocuments.forEach((doc, index) => {
+          const item = document.createElement("li");
+          item.className = "upload-item";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = doc.filename;
+          item.appendChild(nameSpan);
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.textContent = "移除";
+          removeButton.addEventListener("click", () => {
+            uploadedDocuments = uploadedDocuments.filter((_, i) => i !== index);
+            updateUploadsList();
+          });
+          item.appendChild(removeButton);
+
+          uploadsList.appendChild(item);
+        });
+      }
+
+      async function handleFileSelection(event) {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) {
+          return;
+        }
+
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append("file", file);
+          try {
+            uploadStatusEl.textContent = `正在上傳 ${file.name}...`;
+            const response = await fetch("/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!response.ok) {
+              let detail = "檔案上傳失敗";
+              try {
+                const payload = await response.json();
+                if (payload && payload.detail) {
+                  detail = payload.detail;
+                }
+              } catch (err) {
+                // ignore parse errors
+              }
+              throw new Error(detail);
+            }
+            const payload = await response.json();
+            uploadedDocuments.push({
+              id: payload.document_id,
+              filename: payload.filename || file.name,
+              charCount: payload.char_count || 0,
+            });
+            updateUploadsList();
+            uploadStatusEl.textContent = `${file.name} 上傳完成`;
+          } catch (error) {
+            console.error(error);
+            uploadStatusEl.textContent = `上傳失敗：${error.message}`;
+          }
+        }
+
+        setTimeout(() => {
+          uploadStatusEl.textContent = "";
+        }, 4000);
+
+        if (fileInput) {
+          fileInput.value = "";
+        }
+      }
+
+      if (fileInput) {
+        fileInput.addEventListener("change", handleFileSelection);
+      }
+
+      function pinMessageToTop(wrapper) {
+        requestAnimationFrame(() => {
+          if (typeof wrapper.scrollIntoView === "function") {
+            wrapper.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+          } else {
+            const targetTop = Math.max(
+              0,
+              wrapper.offsetTop - chatLog.offsetTop - 16
+            );
+            chatLog.scrollTop = targetTop;
+          }
+        });
+      }
+
+      function alignAnchorForReply() {
+        if (!anchorMessage || anchorAlignedForReply) {
+          return;
+        }
+        pinMessageToTop(anchorMessage);
+        anchorAlignedForReply = true;
+      }
+
+      function createMessage(role, initialText = "", options = {}) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `message ${role}`;
+        const textEl = document.createElement("div");
+        textEl.className = "message-text";
+        if (role === "assistant") {
+          textEl.innerHTML = renderMarkdown(initialText);
+        } else {
+          textEl.textContent = initialText;
+        }
+        wrapper.appendChild(textEl);
+        if (role === "user") {
+          renderUserAttachments(wrapper, options.attachments || []);
+        }
+        chatLog.appendChild(wrapper);
+        if (role === "user") {
+          anchorMessage = wrapper;
+          anchorAlignedForReply = false;
+          pinMessageToTop(wrapper);
+        }
+        return { wrapper, textEl };
+      }
+
+      function renderUserAttachments(wrapper, attachments = []) {
+        if (!attachments.length) {
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "attachments-list";
+        attachments.forEach((attachment) => {
+          const item = document.createElement("li");
+          item.textContent = attachment.name;
+          list.appendChild(item);
+        });
+        wrapper.appendChild(list);
+      }
+
+      function renderSearchResults(
+        wrapper,
+        searchResults = [],
+        provider = null,
+        { autoTriggered = false } = {}
+      ) {
+        const existing = wrapper.querySelector(".search-results");
+        if (existing) {
+          existing.remove();
+        }
+
+        if (!searchResults.length) {
+          return;
+        }
+
+        const resultsBlock = document.createElement("div");
+        resultsBlock.className = "search-results";
+        const heading = document.createElement("p");
+        let providerLabel = "即時網頁查詢結果";
+        if (provider === "duckduckgo") {
+          providerLabel = "DuckDuckGo 網頁查詢結果";
+        } else if (provider === "serpapi") {
+          providerLabel = autoTriggered
+            ? "SerpAPI（自動判斷）網頁查詢結果"
+            : "SerpAPI 網頁查詢結果";
+        }
+        heading.textContent = `🔎 使用了${providerLabel}：`;
+        const list = document.createElement("ul");
+
+        searchResults.forEach((item) => {
+          const listItem = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = item.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = item.title || item.url;
+          listItem.appendChild(link);
+
+          if (item.snippet) {
+            const snippet = document.createElement("p");
+            snippet.textContent = item.snippet;
+            listItem.appendChild(snippet);
+          }
+
+          list.appendChild(listItem);
+        });
+
+        resultsBlock.appendChild(heading);
+        resultsBlock.appendChild(list);
+        wrapper.appendChild(resultsBlock);
+      }
+
+      function renderDocumentUsage(wrapper, documents = []) {
+        const existing = wrapper.querySelector(".document-usage");
+        if (existing) {
+          existing.remove();
+        }
+        if (!documents.length) {
+          return;
+        }
+
+        const block = document.createElement("div");
+        block.className = "document-usage";
+        const heading = document.createElement("p");
+        heading.textContent = "📎 本次參考了上傳檔案：";
+        const list = document.createElement("ul");
+
+        documents.forEach((doc) => {
+          const listItem = document.createElement("li");
+          const match = uploadedDocuments.find((item) => item.id === doc.id);
+          listItem.textContent = match ? match.filename : doc.filename || doc.id;
+          list.appendChild(listItem);
+        });
+
+        block.appendChild(heading);
+        block.appendChild(list);
+        wrapper.appendChild(block);
+      }
+
+      async function sendMessage(event) {
+        event.preventDefault();
+        const message = messageInput.value.trim();
+        if (!message) {
+          return;
+        }
+
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const attachmentsForMessage = uploadedDocuments.map((doc) => ({ name: doc.filename }));
+        createMessage("user", message, { attachments: attachmentsForMessage });
+        history.push({ role: "user", content: message });
+        const submitButton = form.querySelector("button");
+        submitButton.disabled = true;
+        statusEl.textContent = modeStatusText[mode] || "正在產生回應...";
+
+        let assistantMessage;
+        let finalReply = "";
+        let receivedDone = false;
+        let pendingSearchResults = null;
+        let pendingDocumentUsage = null;
+
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message,
+              mode,
+              history,
+              documents: uploadedDocuments.map((doc) => doc.id),
+            }),
+          });
+
+          if (!response.ok || !response.body) {
+            let errorDetail = "伺服器發生錯誤";
+            try {
+              const payload = await response.json();
+              if (payload && payload.detail) {
+                errorDetail = payload.detail;
+              }
+            } catch (err) {
+              try {
+                errorDetail = await response.text();
+              } catch (err2) {
+                // ignore parsing errors
+              }
+            }
+            throw new Error(errorDetail || "伺服器發生錯誤");
+          }
+
+          assistantMessage = createMessage("assistant", "");
+          alignAnchorForReply();
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          const processBuffer = () => {
+            let boundary;
+            while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+              const rawEvent = buffer.slice(0, boundary).trim();
+              buffer = buffer.slice(boundary + 2);
+              if (!rawEvent) {
+                continue;
+              }
+
+              const lines = rawEvent.split("\n");
+              let eventType = "message";
+              let dataPayload = "";
+              for (const line of lines) {
+                if (line.startsWith("event:")) {
+                  eventType = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  const value = line.slice(5).trim();
+                  dataPayload += (dataPayload ? "\n" : "") + value;
+                }
+              }
+
+              if (!dataPayload) {
+                continue;
+              }
+
+              let parsed;
+              try {
+                parsed = JSON.parse(dataPayload);
+              } catch (parseError) {
+                console.error("無法解析伺服器回傳：", parseError);
+                continue;
+              }
+
+              if (eventType === "meta") {
+                if (parsed.used_search) {
+                  pendingSearchResults = {
+                    provider: parsed.search_provider || null,
+                    results: Array.isArray(parsed.search_results)
+                      ? parsed.search_results
+                      : [],
+                    autoTriggered: Boolean(parsed.auto_search_triggered),
+                  };
+                } else {
+                  pendingSearchResults = null;
+                }
+
+                if (Array.isArray(parsed.documents)) {
+                  pendingDocumentUsage = parsed.documents;
+                } else {
+                  pendingDocumentUsage = null;
+                }
+
+                if (parsed.mode === "search_auto") {
+                  if (parsed.auto_search_triggered) {
+                    statusEl.textContent = "偵測到需要搜尋，正在以 SerpAPI 搜尋並產生回應...";
+                  } else {
+                    statusEl.textContent = "判斷不需即時搜尋，使用 LLM 回覆中...";
+                  }
+                }
+              } else if (eventType === "delta") {
+                if (parsed.text) {
+                  finalReply += parsed.text;
+                  assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
+                }
+              } else if (eventType === "done") {
+                if (typeof parsed.text === "string") {
+                  finalReply = parsed.text;
+                  assistantMessage.textEl.innerHTML = renderMarkdown(finalReply);
+                }
+                if (pendingDocumentUsage && pendingDocumentUsage.length) {
+                  renderDocumentUsage(
+                    assistantMessage.wrapper,
+                    pendingDocumentUsage
+                  );
+                }
+                if (
+                  pendingSearchResults &&
+                  Array.isArray(pendingSearchResults.results) &&
+                  pendingSearchResults.results.length
+                ) {
+                  renderSearchResults(
+                    assistantMessage.wrapper,
+                    pendingSearchResults.results,
+                    pendingSearchResults.provider || null,
+                    { autoTriggered: Boolean(pendingSearchResults.autoTriggered) }
+                  );
+                }
+                receivedDone = true;
+                pendingDocumentUsage = null;
+              } else if (eventType === "error") {
+                throw new Error(parsed.message || "伺服器發生錯誤");
+              }
+            }
+          };
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            processBuffer();
+          }
+
+          buffer += decoder.decode();
+          processBuffer();
+
+          if (!receivedDone) {
+            throw new Error("回覆未完整傳送");
+          }
+
+          if (finalReply) {
+            history.push({ role: "assistant", content: finalReply });
+          }
+          statusEl.textContent = "完成";
+        } catch (error) {
+          console.error(error);
+          if (!assistantMessage) {
+            assistantMessage = createMessage("assistant", "");
+          }
+          assistantMessage.textEl.textContent = `⚠️ ${error.message}`;
+          statusEl.textContent = "錯誤";
+        } finally {
+          submitButton.disabled = false;
+          messageInput.value = "";
+          messageInput.focus();
+        }
+      }
+
+      form.addEventListener("submit", sendMessage);
+    </script>
+  </body>
+</html>
