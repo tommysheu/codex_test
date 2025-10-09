@@ -247,7 +247,7 @@
         background: rgba(15, 23, 42, 0.92);
         display: grid;
         gap: 14px;
-        max-height: min(214px, 30vh);
+        max-height: min(240px, 45vh);
         overflow-y: auto;
       }
 
@@ -411,7 +411,7 @@
       <main id="chat-log" aria-live="polite"></main>
       <form id="chat-form">
         <div class="upload-section">
-          <label for="file-input">附件</label>
+          <label for="file-input">附件(支援 PDF、純文字，作為回答參考)</label>
           <div class="upload-controls">
             <input
               type="file"
@@ -420,7 +420,6 @@
               multiple
             />
           </div>
-          <p class="upload-help">支援 PDF、純文字，作為回答參考。</p>
           <div class="upload-status" id="upload-status"></div>
           <ul class="uploads-list" id="uploads-list"></ul>
         </div>
